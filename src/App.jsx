@@ -105,102 +105,180 @@ const themes = {
 
 function PassphraseScreen({ onUnlock }) {
   const [phrase, setPhrase] = useState("");
+  const [confirmPhrase, setConfirmPhrase] = useState("");
+  const [mode, setMode] = useState(null); // null = checking, "register", "login"
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleSubmit = async () => {
+  const handleCheck = async () => {
     if (!phrase.trim()) return;
     setLoading(true);
+    setError("");
     const hash = await hashPassphrase(phrase);
-    localStorage.setItem(LOCAL_KEY, hash);
-    onUnlock(hash);
+
+    try {
+      const { data } = await supabase
+        .from("tracker_data")
+        .select("data")
+        .eq("id", hash)
+        .single();
+
+      if (data && data.data && data.data._verify) {
+        // Row exists — verify passphrase
+        const verifyHash = await hashPassphrase(hash + "::verify");
+        if (verifyHash === data.data._verify) {
+          localStorage.setItem(LOCAL_KEY, hash);
+          onUnlock(hash);
+        } else {
+          setError("Incorrect passphrase. Please try again.");
+        }
+      } else if (data) {
+        // Row exists but no verify token (legacy) — migrate it
+        const verifyHash = await hashPassphrase(hash + "::verify");
+        const updated = { ...data.data, _verify: verifyHash };
+        await supabase.from("tracker_data").update({ data: updated }).eq("id", hash);
+        localStorage.setItem(LOCAL_KEY, hash);
+        onUnlock(hash);
+      } else {
+        // No row — new user, ask to confirm
+        setMode("register");
+      }
+    } catch (e) {
+      // No row found (404/PGRST116) — new user
+      setMode("register");
+    }
+    setLoading(false);
   };
+
+  const handleRegister = async () => {
+    if (phrase !== confirmPhrase) {
+      setError("Passphrases don't match. Please try again.");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    const hash = await hashPassphrase(phrase);
+    const verifyHash = await hashPassphrase(hash + "::verify");
+
+    try {
+      await supabase.from("tracker_data").upsert({
+        id: hash,
+        data: { _verify: verifyHash },
+        updated_at: new Date().toISOString(),
+      });
+      localStorage.setItem(LOCAL_KEY, hash);
+      onUnlock(hash);
+    } catch (e) {
+      setError("Something went wrong. Please try again.");
+    }
+    setLoading(false);
+  };
+
+  const inputStyle = {
+    width: "100%",
+    border: "1px solid rgba(0,0,0,0.1)",
+    borderRadius: 10,
+    padding: "12px 16px",
+    fontSize: 15,
+    fontFamily: "'DM Sans', sans-serif",
+    color: "#3A3226",
+    background: "rgba(255,255,255,0.5)",
+    marginBottom: 12,
+    outline: "none",
+  };
+
+  const btnStyle = (active) => ({
+    width: "100%",
+    padding: "12px 16px",
+    border: "none",
+    borderRadius: 10,
+    background: "#3A3226",
+    color: "#F5F0EB",
+    fontSize: 14,
+    fontWeight: 500,
+    cursor: active ? "pointer" : "default",
+    fontFamily: "'DM Sans', sans-serif",
+    opacity: active ? 1 : 0.4,
+    transition: "opacity 0.2s",
+  });
 
   return (
     <div
       style={{
         minHeight: "100vh",
         background: "linear-gradient(170deg, #F5F0EB 0%, #EDE6DD 40%, #E8E0D4 100%)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 24,
-        fontFamily: "'DM Sans', sans-serif",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: 24, fontFamily: "'DM Sans', sans-serif",
       }}
     >
       <div
         style={{
-          background: "rgba(255,255,255,0.65)",
-          backdropFilter: "blur(8px)",
-          borderRadius: 16,
-          padding: "40px 32px",
-          maxWidth: 380,
-          width: "100%",
-          border: "1px solid rgba(0,0,0,0.05)",
-          animation: "fadeIn 0.5s ease both",
+          background: "rgba(255,255,255,0.65)", backdropFilter: "blur(8px)",
+          borderRadius: 16, padding: "40px 32px", maxWidth: 380, width: "100%",
+          border: "1px solid rgba(0,0,0,0.05)", animation: "fadeIn 0.5s ease both",
         }}
       >
-        <h1
-          style={{
-            fontFamily: "'Instrument Serif', serif",
-            fontSize: 28,
-            fontWeight: 400,
-            color: "#2C2418",
-            marginBottom: 8,
-          }}
-        >
+        <h1 style={{ fontFamily: "'Instrument Serif', serif", fontSize: 28, fontWeight: 400, color: "#2C2418", marginBottom: 8 }}>
           Therapy Tracker
         </h1>
-        <p
-          style={{
-            fontSize: 14,
-            color: "#8B7E6F",
-            marginBottom: 28,
-            lineHeight: 1.5,
-            fontWeight: 300,
-          }}
-        >
-          Enter a passphrase to access your tracker. Use the same passphrase on any device to sync your data.
+        <p style={{ fontSize: 14, color: "#8B7E6F", marginBottom: 28, lineHeight: 1.5, fontWeight: 300 }}>
+          {mode === "register"
+            ? "This passphrase is new. Confirm it to set up your tracker."
+            : "Enter your passphrase to access your tracker."}
         </p>
+
+        {error && (
+          <p style={{ fontSize: 13, color: "#C0392B", marginBottom: 14, lineHeight: 1.4 }}>{error}</p>
+        )}
+
         <input
           type="password"
           value={phrase}
-          onChange={(e) => setPhrase(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+          onChange={(e) => { setPhrase(e.target.value); setError(""); setMode(null); }}
+          onKeyDown={(e) => e.key === "Enter" && !mode && handleCheck()}
           placeholder="Your passphrase..."
-          style={{
-            width: "100%",
-            border: "1px solid rgba(0,0,0,0.1)",
-            borderRadius: 10,
-            padding: "12px 16px",
-            fontSize: 15,
-            fontFamily: "'DM Sans', sans-serif",
-            color: "#3A3226",
-            background: "rgba(255,255,255,0.5)",
-            marginBottom: 16,
-            outline: "none",
-          }}
+          style={inputStyle}
           autoFocus
+          disabled={mode === "register"}
         />
-        <button
-          onClick={handleSubmit}
-          disabled={loading || !phrase.trim()}
-          style={{
-            width: "100%",
-            padding: "12px 16px",
-            border: "none",
-            borderRadius: 10,
-            background: "#3A3226",
-            color: "#F5F0EB",
-            fontSize: 14,
-            fontWeight: 500,
-            cursor: phrase.trim() ? "pointer" : "default",
-            fontFamily: "'DM Sans', sans-serif",
-            opacity: phrase.trim() ? 1 : 0.4,
-            transition: "opacity 0.2s",
-          }}
-        >
-          {loading ? "Loading..." : "Open Tracker"}
-        </button>
+
+        {mode === "register" && (
+          <input
+            type="password"
+            value={confirmPhrase}
+            onChange={(e) => { setConfirmPhrase(e.target.value); setError(""); }}
+            onKeyDown={(e) => e.key === "Enter" && handleRegister()}
+            placeholder="Confirm passphrase..."
+            style={inputStyle}
+            autoFocus
+          />
+        )}
+
+        {mode === "register" ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <button
+              onClick={handleRegister}
+              disabled={loading || !confirmPhrase.trim()}
+              style={btnStyle(!loading && confirmPhrase.trim())}
+            >
+              {loading ? "Setting up..." : "Create Tracker"}
+            </button>
+            <button
+              onClick={() => { setMode(null); setPhrase(""); setConfirmPhrase(""); setError(""); }}
+              style={{ background: "none", border: "none", fontSize: 13, color: "#8B7E6F", cursor: "pointer", fontFamily: "'DM Sans', sans-serif", marginTop: 4 }}
+            >
+              Start over
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={handleCheck}
+            disabled={loading || !phrase.trim()}
+            style={btnStyle(!loading && phrase.trim())}
+          >
+            {loading ? "Checking..." : "Open Tracker"}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -244,6 +322,7 @@ function Tracker({ userKey, onLogout }) {
   const [saveFeedback, setSaveFeedback] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const saveTimer = useRef(null);
+  const verifyToken = useRef("");
 
   const t = darkMode ? themes.dark : themes.light;
 
@@ -264,6 +343,7 @@ function Tracker({ userKey, onLogout }) {
           if (d.completions) setCompletions(d.completions);
           if (d.notes !== undefined) setNotes(d.notes);
           if (d.darkMode !== undefined) setDarkMode(d.darkMode);
+          if (d._verify) verifyToken.current = d._verify;
         }
       } catch (e) {
         console.log("No saved data found, starting fresh");
@@ -285,6 +365,7 @@ function Tracker({ userKey, onLogout }) {
             completions: comps,
             notes: n,
             darkMode: dm,
+            _verify: verifyToken.current,
           };
           const { error } = await supabase
             .from("tracker_data")
