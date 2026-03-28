@@ -436,15 +436,6 @@ function Tracker({ userKey, onLogout }) {
     save(focalAreas, activities, completions, notes, next);
   };
 
-  const weeklyStats = activities.map((act) => {
-    let count = 0;
-    weekDates.forEach((d) => {
-      if (!isFuture(d) && completions[`${act}::${dateKey(d)}`]) count++;
-    });
-    const pastDays = weekDates.filter((d) => !isFuture(d)).length;
-    return { activity: act, count, total: pastDays };
-  });
-
   const formatDateRange = () => {
     if (weekStart.getMonth() === weekEnd.getMonth()) {
       return `${weekStart.getDate()} \u2013 ${weekEnd.getDate()} ${MONTHS[weekEnd.getMonth()]} ${weekEnd.getFullYear()}`;
@@ -597,24 +588,6 @@ function Tracker({ userKey, onLogout }) {
           ) : (
             <button onClick={() => setAddingActivity(true)} style={{ border: `1px dashed ${t.dashBorder}`, borderRadius: 8, background: "none", padding: "10px 16px", fontSize: 13, color: t.accent, cursor: "pointer", fontFamily: "'DM Sans', sans-serif", fontWeight: 500, width: "100%", textAlign: "left" }}>+ Add activity</button>
           )}
-
-          {/* Weekly summary */}
-          <div style={{ marginTop: 24, paddingTop: 20, borderTop: `1px solid ${t.summaryBorder}` }}>
-            <h3 style={{ fontSize: 14, fontWeight: 500, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 14 }}>This Week</h3>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {weeklyStats.map((st, i) => (
-                <div key={i}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                    <span style={{ fontSize: 13, color: t.text }}>{st.activity}</span>
-                    <span style={{ fontSize: 13, color: t.textMuted, fontWeight: 500 }}>{st.count}/{st.total}</span>
-                  </div>
-                  <div style={{ height: 5, background: t.progressBg, borderRadius: 4, overflow: "hidden" }}>
-                    <div className="progress-fill" style={{ height: "100%", background: `linear-gradient(90deg, ${t.green}, ${t.greenLight})`, borderRadius: 4, width: st.total > 0 ? `${(st.count / st.total) * 100}%` : "0%" }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
         </div>
 
         {/* Section 3: Notes */}
